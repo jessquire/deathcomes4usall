@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ranger's Survey — Live D&D Battle Map</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --pine-deep:#141F18;
+    --pine:#1B2B21;
+    --panel:#203327;
+    --panel-2:#243B2C;
+    --line:#33503F;
+    --line-soft:#2A4233;
+    --moss:#7FA96B;
+    --bone:#EAE3CF;
+    --bone-dim:#AFA98F;
+    --amber:#E5A94F;
+    --amber-deep:#B77F2E;
+    --ember:#C75B4A;
+    --ember-deep:#8F3A2E;
+    --dirt:#4A4232;
+    --font-display:'IM Fell English SC', serif;
+    --font-body:'Alegreya Sans', system-ui, sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+    --cell:40px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--pine-deep); color:var(--bone); font-family:var(--font-body);}
+  button{font-family:var(--font-body); cursor:pointer;}
+  input,select,textarea{font-family:var(--font-body); color:var(--bone); background:var(--pine); border:1px solid var(--line); border-radius:4px; padding:6px 8px; font-size:14px; width:100%;}
+  input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--moss); outline-offset:1px;}
+
+  header{padding:18px 22px 10px; border-bottom:1px solid var(--line-soft); display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;}
+  header h1{font-family:var(--font-display); font-weight:400; font-size:28px; letter-spacing:.04em; color:var(--bone);}
+  header p{color:var(--bone-dim); font-size:14px;}
+
+  .layout{display:flex; gap:18px; padding:18px 22px 40px; align-items:flex-start;}
+  @media (max-width: 900px){ .layout{flex-direction:column;} .side{width:100% !important;} }
+
+  /* ---------- MAP ---------- */
+  .map-wrap{flex:1; min-width:0;}
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center;}
+  .toolbar .mode-btn{
+    background:var(--panel); border:1px solid var(--line); color:var(--bone-dim);
+    padding:7px 14px; border-radius:4px; font-size:14px; font-weight:500;
+  }
+  .toolbar .mode-btn.active{background:var(--moss); border-color:var(--moss); color:#14241B; font-weight:700;}
+  .toolbar .util-btn{
+    background:transparent; border:1px solid var(--line); color:var(--bone-dim);
+    padding:7px 12px; border-radius:4px; font-size:13px;
+  }
+  .toolbar .util-btn:hover{color:var(--bone); border-color:var(--moss);}
+  #readout{font-family:var(--font-mono); font-size:13px; color:var(--amber); margin-left:auto; min-height:1.2em;}
+
+  .map-scroll{overflow:auto; border:1px solid var(--line); border-radius:6px; background:var(--pine); padding:26px 10px 10px 30px; position:relative;}
+  #map{position:relative; background:var(--pine);}
+  #grid-svg{display:block;}
+  .col-labels,.row-labels{position:absolute; font-family:var(--font-mono); font-size:10px; color:var(--bone-dim); pointer-events:none;}
+  .col-labels span,.row-labels span{position:absolute;}
+
+  .token{
+    position:absolute; width:calc(var(--cell) - 8px); height:calc(var(--cell) - 8px);
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-weight:600; font-size:12px;
+    cursor:grab; touch-action:none; user-select:none;
+    border:2px solid; transition:box-shadow .12s;
+  }
+  .token:active{cursor:grabbing;}
+  .token.party{background:var(--amber); border-color:var(--amber-deep); color:#241A08;}
+  .token.enemy{background:var(--ember); border-color:var(--ember-deep); color:#2A0F0A;}
+  .token.neutral{background:var(--moss); border-color:#5C8050; color:#14241B;}
+  .token.hidden-tok{opacity:.55; border-style:dashed;}
+  .token.selected{box-shadow:0 0 0 3px var(--bone), 0 0 12px 2px rgba(234,227,207,.4);}
+  .token.measure-pick{box-shadow:0 0 0 3px var(--amber), 0 0 12px 2px rgba(229,169,79,.5);}
+  .token .elev{
+    position:absolute; top:-9px; right:-11px; background:var(--pine-deep);
+    border:1px solid var(--line); border-radius:8px; padding:0 4px;
+    font-size:9px; color:var(--amber); line-height:1.5;
+  }
+
+  /* ---------- SIDEBAR ---------- */
+  .side{width:330px; flex-shrink:0; display:flex; flex-direction:column; gap:14px;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:14px;}
+  .card h2{font-family:var(--font-display); font-weight:400; font-size:19px; letter-spacing:.05em; margin-bottom:10px; color:var(--bone);}
+  .card h2 .hint{font-family:var(--font-body); font-size:12px; color:var(--bone-dim); letter-spacing:0; margin-left:6px;}
+
+  #measure-out{font-size:14px; line-height:1.5;}
+  #measure-out .big{font-family:var(--font-mono); font-size:20px; color:var(--amber);}
+  #measure-out .dim{color:var(--bone-dim); font-size:13px;}
+
+  .roster{display:flex; flex-direction:column; gap:4px; max-height:340px; overflow:auto;}
+  .roster-row{
+    display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:4px;
+    background:transparent; border:1px solid transparent; text-align:left; color:var(--bone); font-size:13px; width:100%;
+  }
+  .roster-row:hover{background:var(--panel-2);}
+  .roster-row.selected{border-color:var(--moss);}
+  .dot{width:12px; height:12px; border-radius:50%; flex-shrink:0;}
+  .dot.party{background:var(--amber);} .dot.enemy{background:var(--ember);} .dot.neutral{background:var(--moss);}
+  .roster-row .code{font-family:var(--font-mono); font-weight:600; width:34px; flex-shrink:0;}
+  .roster-row .rname{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--bone-dim);}
+  .roster-row .sq{font-family:var(--font-mono); color:var(--moss); flex-shrink:0;}
+
+  .field{margin-bottom:9px;}
+  .field label{display:block; font-size:12px; color:var(--bone-dim); margin-bottom:3px; letter-spacing:.03em;}
+  .row2{display:flex; gap:8px;} .row2 .field{flex:1;}
+  .check{display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:9px;}
+  .check input{width:auto;}
+  .btn-row{display:flex; gap:8px; margin-top:4px;}
+  .btn{flex:1; padding:8px; border-radius:4px; border:1px solid var(--line); background:var(--panel-2); color:var(--bone); font-size:14px;}
+  .btn:hover{border-color:var(--moss);}
+  .btn.danger{color:#E8A69C;} .btn.danger:hover{border-color:var(--ember);}
+  .btn.primary{background:var(--moss); border-color:var(--moss); color:#14241B; font-weight:700;}
+
+  textarea#io{font-family:var(--font-mono); font-size:11px; min-height:90px; resize:vertical;}
+  .help{font-size:13px; color:var(--bone-dim); line-height:1.55;}
+  .help b{color:var(--bone); font-weight:600;}
+  .help li{margin:4px 0 4px 16px;}
+  details summary{cursor:pointer; font-size:13px; color:var(--moss); margin-bottom:8px;}
+  .flash{color:var(--moss); font-size:12px; min-height:1em; margin-top:4px;}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Ranger&rsquo;s Survey</h1>
+  <p>A shared battle map for play-by-post D&amp;D &mdash; drag tokens, measure distances, post positions to Discord.</p>
+</header>
+
+<div class="layout">
+
+  <div class="map-wrap">
+    <div class="toolbar">
+      <button class="mode-btn active" id="mode-move">Move tokens</button>
+      <button class="mode-btn" id="mode-measure">Measure</button>
+      <button class="util-btn" id="btn-add">+ Add token</button>
+      <button class="util-btn" id="btn-reset">Reset to ambush scene</button>
+      <span id="readout"></span>
+    </div>
+    <div class="map-scroll">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <div class="side">
+
+    <div class="card" id="measure-card">
+      <h2>Distance</h2>
+      <div id="measure-out"><span class="dim">Switch to <b>Measure</b>, then tap two tokens.</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Roster <span class="hint">tap a name to select</span></h2>
+      <div class="roster" id="roster"></div>
+    </div>
+
+    <div class="card" id="editor" style="display:none;">
+      <h2>Edit token</h2>
+      <div class="row2">
+        <div class="field"><label for="f-code">Code</label><input id="f-code" maxlength="4"></div>
+        <div class="field"><label for="f-side">Side</label>
+          <select id="f-side"><option value="party">Party</option><option value="enemy">Enemy</option><option value="neutral">Neutral</option></select>
+        </div>
+      </div>
+      <div class="field"><label for="f-name">Name / description</label><input id="f-name"></div>
+      <div class="row2">
+        <div class="field"><label for="f-elev">Elevation (ft)</label><input id="f-elev" type="number" step="5" min="0"></div>
+        <div class="field"><label for="f-sq">Square</label><input id="f-sq" disabled></div>
+      </div>
+      <div class="field"><label for="f-note">Note (weapon, condition, intent&hellip;)</label><input id="f-note"></div>
+      <div class="check"><input type="checkbox" id="f-hidden"><label for="f-hidden" style="margin:0;">Hidden / unseen</label></div>
+      <div class="btn-row">
+        <button class="btn danger" id="btn-del">Remove</button>
+        <button class="btn primary" id="btn-done">Done</button>
+      </div>
+    </div>
+
+    <div class="card" id="live-card">
+      <h2>Live sync</h2>
+      <div class="help" id="live-status" style="margin-bottom:10px;">Not configured — running in local mode.</div>
+      <div id="dm-login" style="display:none;">
+        <div class="field"><label for="dm-email">DM email</label><input id="dm-email" type="email" autocomplete="username"></div>
+        <div class="field"><label for="dm-pass">DM password</label><input id="dm-pass" type="password" autocomplete="current-password"></div>
+        <div class="btn-row"><button class="btn primary" id="btn-signin">Sign in as DM</button></div>
+        <div class="flash" id="auth-flash"></div>
+      </div>
+      <div id="dm-signedin" style="display:none;">
+        <div class="help" style="margin-bottom:8px;">Signed in as <b id="dm-who"></b>. Your edits push to every player instantly.</div>
+        <div class="btn-row"><button class="btn" id="btn-signout">Sign out</button></div>
+      </div>
+      <details style="margin-top:10px;">
+        <summary>One-time setup for your domain (DM does this once)</summary>
+        <div class="help">
+          The map page itself is static, so you can host it anywhere your domain points (Netlify, GitHub Pages, cPanel, S3&hellip;). The shared, real-time state lives in a free Firebase Realtime Database:
+          <li><b>1.</b> Go to console.firebase.google.com and create a free project.</li>
+          <li><b>2.</b> Build &rarr; <b>Authentication</b> &rarr; Sign-in method &rarr; enable <b>Email/Password</b>. In the Users tab, add one user: the DM's email and a password. Copy the user's <b>UID</b>.</li>
+          <li><b>3.</b> Build &rarr; <b>Realtime Database</b> &rarr; Create database. In the <b>Rules</b> tab paste (with the real UID):<br>
+          <code style="font-size:11px; color:var(--moss); display:block; white-space:pre; overflow:auto;">{
+  "rules": {
+    "scenes": {
+      ".read": true,
+      ".write": "auth != null &amp;&amp;
+        auth.uid === 'PASTE_DM_UID_HERE'"
+    }
+  }
+}</code></li>
+          <li><b>4.</b> Project settings &rarr; Your apps &rarr; add a <b>Web app</b>. Copy the <code>firebaseConfig</code> object it shows.</li>
+          <li><b>5.</b> Open this HTML file in a text editor, find <code>FIREBASE_CONFIG</code> near the top of the script, and paste the config in.</li>
+          <li><b>6.</b> Upload the file to your domain and share the URL. Players just open it; only the DM signs in.</li>
+          These rules are what actually enforce &ldquo;DM-only&rdquo; — the database rejects writes from anyone else, so hiding the login box is cosmetic, not the security.
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Share with your group</h2>
+      <div class="btn-row" style="margin-bottom:8px;">
+        <button class="btn" id="btn-copy-text">Copy positions as text</button>
+      </div>
+      <div class="btn-row" style="margin-bottom:8px;">
+        <button class="btn" id="btn-export">Export scene</button>
+        <button class="btn" id="btn-import">Load scene</button>
+      </div>
+      <textarea id="io" placeholder="Export puts scene data here to copy into Discord. Paste a scene here and press Load."></textarea>
+      <div class="flash" id="flash"></div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>How to use this map</summary>
+        <div class="help">
+          <li><b>Move tokens:</b> drag any circle. It snaps to 5-ft squares.</li>
+          <li><b>Measure:</b> tap the Measure mode, then tap two tokens. You get the grid distance (D&amp;D squares) and, if one of them is elevated, the true line distance for ranged attacks.</li>
+          <li><b>Squares are named</b> like a chessboard (E7), so you can post moves in Discord: &ldquo;Kira drops from the tree and moves to D6.&rdquo;</li>
+          <li><b>Copy positions as text</b> posts a readable summary of everyone&rsquo;s location for players taking turns later.</li>
+          <li><b>Export / Load:</b> whoever takes their turn exports the scene and pastes the block into Discord; the next player pastes it back in and presses Load. The map has no server &mdash; the text block <i>is</i> the save file.</li>
+        </div>
+      </details>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ======================================================================
+  // LIVE SYNC SETUP — paste your Firebase web-app config between the
+  // braces below (see "One-time setup" in the sidebar for the 6 steps).
+  // Leave it empty and the map runs in local mode, exactly like before.
+  // ======================================================================
+  const firebaseConfig = {
+  apiKey: "AIzaSyAE4WESgqvlk0slI5kUQJPqBrk2O6WaFvk",
+  authDomain: "death-comes-4-us-all.firebaseapp.com",
+  databaseURL: "https://death-comes-4-us-all-default-rtdb.firebaseio.com",
+  projectId: "death-comes-4-us-all",
+  storageBucket: "death-comes-4-us-all.firebasestorage.app",
+  messagingSenderId: "435212443510",
+  appId: "1:435212443510:web:03fc376f2dc20c41c2e457"
+}; 
+
+ var SCENE_PATH = 'scenes/main';
+
+  var liveMode = !!(FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey);
+  var isDM = false;            // true after the DM signs in
+  var db = null, sceneRef = null, applyingRemote = false;
+
+  var COLS=16, ROWS=12, CELL=40;
+  var COL_NAMES='ABCDEFGHIJKLMNOP'.split('');
+
+  // ---- The ambush scene, built from the DM's description ----
+  // Road runs top-to-bottom along columns A–B. "Off the road" = eastward.
+  function ambushScene(){ return [
+    {id:1, code:'YOU', name:'You — up the tree', side:'party', col:2, row:6, elev:15, hidden:true,  note:'5 ft off path, 15 ft up. Unseen. Drop range: H1, E1, E2, B1'},
+    {id:2, code:'P2',  name:'Party member',       side:'party', col:0, row:5, elev:0,  hidden:false, note:'On the path'},
+    {id:3, code:'P3',  name:'Party member',       side:'party', col:1, row:7, elev:0,  hidden:false, note:'On the path'},
+    {id:4, code:'P4',  name:'Party member',       side:'party', col:0, row:8, elev:0,  hidden:false, note:'On the path'},
+    {id:5, code:'H1',  name:'Human — axe & dagger, leather', side:'enemy', col:3, row:4, elev:0, hidden:true,  note:'10 ft off road, trying to stay hidden. In drop range'},
+    {id:6, code:'E1',  name:'Elf archer — longbow drawn, no armor', side:'enemy', col:4, row:6, elev:0, hidden:false, note:'15 ft off road. Fired the arrow. In drop range'},
+    {id:7, code:'E2',  name:'Elf — longsword, leather', side:'enemy', col:4, row:7, elev:0, hidden:false, note:'Next to E1, watching the party. In drop range'},
+    {id:8, code:'B1',  name:'Halfling — clothes, carrying a flute', side:'enemy', col:6, row:4, elev:0, hidden:false, note:'10 ft behind E1, off to your left. In drop range'},
+    {id:9, code:'H2',  name:'Human — bow', side:'enemy', col:7, row:9, elev:0, hidden:false, note:'15 ft back from E1, moving forward. Out of reach'},
+    {id:10,code:'H3',  name:'Human — bow', side:'enemy', col:7, row:7, elev:0, hidden:false, note:'Even with H2, 10 ft apart. Out of reach'},
+    {id:11,code:'E3',  name:'Elf — cloak, no visible weapons', side:'enemy', col:8, row:6, elev:0, hidden:false, note:'20 ft behind E1, not moving. Out of reach'},
+    {id:12,code:'G1',  name:'Goliath — no armor, no weapons', side:'enemy', col:7, row:5, elev:0, hidden:false, note:'Beside & slightly ahead of E3. Out of reach'}
+  ];}
+
+  var tokens = ambushScene();
+  var nextId = 100;
+  var mode = 'move';               // 'move' | 'measure'
+  var selectedId = null;           // token being edited
+  var measurePicks = [];           // up to 2 token ids
+
+  var map = document.getElementById('map');
+  var roster = document.getElementById('roster');
+  var readout = document.getElementById('readout');
+  var flash = document.getElementById('flash');
+
+  // ---------- build static grid ----------
+  var svgNS='http://www.w3.org/2000/svg';
+  var W=COLS*CELL, H=ROWS*CELL;
+  map.style.width=W+'px'; map.style.height=H+'px';
+
+  var svg=document.createElementNS(svgNS,'svg');
+  svg.setAttribute('id','grid-svg');
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  map.appendChild(svg);
+
+  // dirt road, columns A–B
+  var road=document.createElementNS(svgNS,'rect');
+  road.setAttribute('x',0); road.setAttribute('y',0);
+  road.setAttribute('width',2*CELL); road.setAttribute('height',H);
+  road.setAttribute('fill','#4A4232'); road.setAttribute('opacity','0.55');
+  svg.appendChild(road);
+  var roadEdge=document.createElementNS(svgNS,'line');
+  roadEdge.setAttribute('x1',2*CELL); roadEdge.setAttribute('y1',0);
+  roadEdge.setAttribute('x2',2*CELL); roadEdge.setAttribute('y2',H);
+  roadEdge.setAttribute('stroke','#6B5F43'); roadEdge.setAttribute('stroke-dasharray','6 5'); roadEdge.setAttribute('stroke-width','1.5');
+  svg.appendChild(roadEdge);
+
+  // scattered trees (decoration only)
+  var treeSpots=[[3,1],[5,2],[3,8],[5,10],[6,7],[8,2],[9,4],[9,9],[10,1],[11,7],[12,3],[12,10],[13,6],[14,2],[14,9],[15,5],[10,11],[6,11],[13,11],[15,11],[11,5],[14,7]];
+  treeSpots.forEach(function(t){
+    var g=document.createElementNS(svgNS,'g');
+    var cx=t[0]*CELL+CELL/2, cy=t[1]*CELL+CELL/2;
+    var c=document.createElementNS(svgNS,'circle');
+    c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r',11);
+    c.setAttribute('fill','#2E4A38'); c.setAttribute('opacity','0.7');
+    var c2=document.createElementNS(svgNS,'circle');
+    c2.setAttribute('cx',cx-6); c2.setAttribute('cy',cy+4); c2.setAttribute('r',7);
+    c2.setAttribute('fill','#2E4A38'); c2.setAttribute('opacity','0.55');
+    g.appendChild(c); g.appendChild(c2); svg.appendChild(g);
+  });
+
+  // player's tree — distinct ring
+  var pt=document.createElementNS(svgNS,'circle');
+  pt.setAttribute('cx',2*CELL+CELL/2); pt.setAttribute('cy',6*CELL+CELL/2); pt.setAttribute('r',16);
+  pt.setAttribute('fill','none'); pt.setAttribute('stroke','#7FA96B');
+  pt.setAttribute('stroke-dasharray','3 4'); pt.setAttribute('stroke-width','1.5'); pt.setAttribute('opacity','0.9');
+  svg.appendChild(pt);
+
+  // grid lines
+  for(var c=0;c<=COLS;c++){
+    var l=document.createElementNS(svgNS,'line');
+    l.setAttribute('x1',c*CELL); l.setAttribute('y1',0); l.setAttribute('x2',c*CELL); l.setAttribute('y2',H);
+    l.setAttribute('stroke','#33503F'); l.setAttribute('stroke-width','1'); l.setAttribute('opacity','0.6');
+    svg.appendChild(l);
+  }
+  for(var r=0;r<=ROWS;r++){
+    var l2=document.createElementNS(svgNS,'line');
+    l2.setAttribute('x1',0); l2.setAttribute('y1',r*CELL); l2.setAttribute('x2',W); l2.setAttribute('y2',r*CELL);
+    l2.setAttribute('stroke','#33503F'); l2.setAttribute('stroke-width','1'); l2.setAttribute('opacity','0.6');
+    svg.appendChild(l2);
+  }
+
+  // measure overlay
+  var overlay=document.createElementNS(svgNS,'svg');
+  overlay.setAttribute('width',W); overlay.setAttribute('height',H);
+  overlay.style.position='absolute'; overlay.style.left='0'; overlay.style.top='0';
+  overlay.style.pointerEvents='none';
+  map.appendChild(overlay);
+
+  // A–P / 1–12 labels around the margin
+  var colLab=document.createElement('div'); colLab.className='col-labels';
+  colLab.style.left='0'; colLab.style.top='-18px'; colLab.style.width=W+'px';
+  for(var i=0;i<COLS;i++){
+    var s=document.createElement('span'); s.textContent=COL_NAMES[i];
+    s.style.left=(i*CELL+CELL/2-3)+'px'; colLab.appendChild(s);
+  }
+  map.appendChild(colLab);
+  var rowLab=document.createElement('div'); rowLab.className='row-labels';
+  rowLab.style.left='-20px'; rowLab.style.top='0'; rowLab.style.height=H+'px';
+  for(var j=0;j<ROWS;j++){
+    var s2=document.createElement('span'); s2.textContent=(j+1);
+    s2.style.top=(j*CELL+CELL/2-6)+'px'; rowLab.appendChild(s2);
+  }
+  map.appendChild(rowLab);
+
+  // ---------- helpers ----------
+  function sq(t){ return COL_NAMES[t.col]+(t.row+1); }
+  function byId(id){ for(var i=0;i<tokens.length;i++) if(tokens[i].id===id) return tokens[i]; return null; }
+  function gridFeet(a,b){ return Math.max(Math.abs(a.col-b.col), Math.abs(a.row-b.row))*5; }
+  function lineFeet(a,b){
+    var dx=(a.col-b.col)*5, dy=(a.row-b.row)*5, dz=(a.elev||0)-(b.elev||0);
+    return Math.round(Math.sqrt(dx*dx+dy*dy+dz*dz));
+  }
+  function say(msg){ flash.textContent=msg; setTimeout(function(){ if(flash.textContent===msg) flash.textContent=''; }, 3500); }
+  function canEdit(){ return !liveMode || isDM; }
+  function persist(){
+    if(!liveMode || !isDM || !sceneRef || applyingRemote) return;
+    sceneRef.set({v:1, tokens:tokens}).catch(function(){ say('Could not save to the live database.'); });
+  }
+
+  // ---------- rendering ----------
+  var tokenEls={};
+  function renderTokens(){
+    Object.keys(tokenEls).forEach(function(k){
+      if(!byId(+k)){ map.removeChild(tokenEls[k]); delete tokenEls[k]; }
+    });
+    tokens.forEach(function(t){
+      var el=tokenEls[t.id];
+      if(!el){
+        el=document.createElement('div');
+        el.setAttribute('role','button');
+        el.setAttribute('tabindex','0');
+        tokenEls[t.id]=el; map.appendChild(el);
+        attachPointer(el, t.id);
+      }
+      el.className='token '+t.side
+        +(t.hidden?' hidden-tok':'')
+        +(t.id===selectedId?' selected':'')
+        +(measurePicks.indexOf(t.id)>-1?' measure-pick':'');
+      el.style.left=(t.col*CELL+4)+'px';
+      el.style.top=(t.row*CELL+4)+'px';
+      el.setAttribute('aria-label', t.code+' '+t.name+' at '+sq(t));
+      el.innerHTML='';
+      el.appendChild(document.createTextNode(t.code));
+      if(t.elev>0){
+        var b=document.createElement('span'); b.className='elev'; b.textContent='\u2191'+t.elev;
+        el.appendChild(b);
+      }
+    });
+  }
+
+  function renderRoster(){
+    roster.innerHTML='';
+    tokens.forEach(function(t){
+      var row=document.createElement('button');
+      row.className='roster-row'+(t.id===selectedId?' selected':'');
+      var dot=document.createElement('span'); dot.className='dot '+t.side;
+      var code=document.createElement('span'); code.className='code'; code.textContent=t.code;
+      var nm=document.createElement('span'); nm.className='rname';
+      nm.textContent=t.name + (t.note ? ' — '+t.note : '');
+      var sqs=document.createElement('span'); sqs.className='sq';
+      sqs.textContent=sq(t)+(t.elev>0?' \u2191'+t.elev:'');
+      row.appendChild(dot); row.appendChild(code); row.appendChild(nm); row.appendChild(sqs);
+      row.addEventListener('click', function(){
+        if(mode==='measure'){ pickMeasure(t.id); } else { selectToken(t.id); }
+      });
+      roster.appendChild(row);
+    });
+  }
+
+  function renderMeasure(){
+    overlay.innerHTML='';
+    var out=document.getElementById('measure-out');
+    if(measurePicks.length===2){
+      var a=byId(measurePicks[0]), b=byId(measurePicks[1]);
+      if(!a||!b){ measurePicks=[]; return; }
+      var line=document.createElementNS(svgNS,'line');
+      line.setAttribute('x1',a.col*CELL+CELL/2); line.setAttribute('y1',a.row*CELL+CELL/2);
+      line.setAttribute('x2',b.col*CELL+CELL/2); line.setAttribute('y2',b.row*CELL+CELL/2);
+      line.setAttribute('stroke','#E5A94F'); line.setAttribute('stroke-width','2');
+      line.setAttribute('stroke-dasharray','5 5');
+      overlay.appendChild(line);
+      var g=gridFeet(a,b), lf=lineFeet(a,b);
+      var html='<b>'+a.code+'</b> \u2194 <b>'+b.code+'</b><br><span class="big">'+g+' ft</span> <span class="dim">on the grid</span>';
+      if((a.elev||0)!==(b.elev||0)){
+        html+='<br><span class="big">'+lf+' ft</span> <span class="dim">true line (with elevation) \u2014 use for ranged</span>';
+      }
+      out.innerHTML=html;
+      readout.textContent=a.code+' \u2194 '+b.code+': '+g+' ft';
+    } else if(measurePicks.length===1){
+      var a1=byId(measurePicks[0]);
+      out.innerHTML='<b>'+(a1?a1.code:'')+'</b> selected \u2014 <span class="dim">tap a second token.</span>';
+      readout.textContent='';
+    } else {
+      out.innerHTML='<span class="dim">Switch to <b>Measure</b>, then tap two tokens.</span>';
+      readout.textContent='';
+    }
+  }
+
+  function renderAll(){ renderTokens(); renderRoster(); renderMeasure(); syncEditor(); }
+
+  // ---------- pointer / drag ----------
+  function attachPointer(el, id){
+    var startX,startY,startCol,startRow,moved,dragging=false;
+    el.addEventListener('pointerdown', function(e){
+      if(mode==='measure'){ return; }
+      if(!canEdit()){ return; } // viewers can select & measure, not move
+      e.preventDefault();
+      var t=byId(id); if(!t) return;
+      dragging=true; moved=false;
+      startX=e.clientX; startY=e.clientY; startCol=t.col; startRow=t.row;
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', function(e){
+      if(!dragging) return;
+      var t=byId(id); if(!t) return;
+      var dx=e.clientX-startX, dy=e.clientY-startY;
+      if(Math.abs(dx)>4||Math.abs(dy)>4) moved=true;
+      var nc=Math.min(COLS-1, Math.max(0, startCol+Math.round(dx/CELL)));
+      var nr=Math.min(ROWS-1, Math.max(0, startRow+Math.round(dy/CELL)));
+      if(nc!==t.col||nr!==t.row){ t.col=nc; t.row=nr; renderTokens(); renderMeasure();
+        readout.textContent=t.code+' \u2192 '+sq(t);
+      }
+    });
+    function up(e){
+      if(!dragging) return;
+      dragging=false;
+      var t=byId(id); if(!t) return;
+      if(!moved){ selectToken(id); }
+      else { renderRoster(); syncEditor(); readout.textContent=t.code+' now at '+sq(t); persist(); }
+    }
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('click', function(){
+      if(mode==='measure'){ pickMeasure(id); }
+    });
+    el.addEventListener('keydown', function(e){
+      if(e.key==='Enter'||e.key===' '){ e.preventDefault();
+        if(mode==='measure') pickMeasure(id); else selectToken(id);
+      }
+    });
+  }
+
+  function pickMeasure(id){
+    if(measurePicks.length>=2) measurePicks=[];
+    if(measurePicks.indexOf(id)===-1) measurePicks.push(id);
+    renderTokens(); renderMeasure();
+  }
+
+  // ---------- editor ----------
+  var editor=document.getElementById('editor');
+  var fCode=document.getElementById('f-code'), fName=document.getElementById('f-name'),
+      fSide=document.getElementById('f-side'), fElev=document.getElementById('f-elev'),
+      fNote=document.getElementById('f-note'), fHidden=document.getElementById('f-hidden'),
+      fSq=document.getElementById('f-sq');
+
+  function selectToken(id){
+    selectedId=id;
+    renderTokens(); renderRoster(); syncEditor();
+  }
+  function syncEditor(){
+    var t=byId(selectedId);
+    if(!t){ editor.style.display='none'; return; }
+    editor.style.display='block';
+    fCode.value=t.code; fName.value=t.name; fSide.value=t.side;
+    fElev.value=t.elev||0; fNote.value=t.note||''; fHidden.checked=!!t.hidden;
+    fSq.value=sq(t);
+  }
+  var persistDebounce=null;
+  function applyEditor(){
+    if(!canEdit()) return;
+    var t=byId(selectedId); if(!t) return;
+    t.code=(fCode.value||'?').toUpperCase().slice(0,4);
+    t.name=fName.value||'Unnamed';
+    t.side=fSide.value;
+    t.elev=Math.max(0, parseInt(fElev.value,10)||0);
+    t.note=fNote.value;
+    t.hidden=fHidden.checked;
+    renderTokens(); renderRoster();
+    clearTimeout(persistDebounce);
+    persistDebounce=setTimeout(persist, 500);
+  }
+  [fCode,fName,fSide,fElev,fNote,fHidden].forEach(function(f){
+    f.addEventListener('change',applyEditor);
+    f.addEventListener('input',applyEditor);
+  });
+  document.getElementById('btn-done').addEventListener('click', function(){
+    selectedId=null; renderTokens(); renderRoster(); syncEditor();
+  });
+  document.getElementById('btn-del').addEventListener('click', function(){
+    if(!canEdit()) return;
+    tokens=tokens.filter(function(t){return t.id!==selectedId;});
+    measurePicks=measurePicks.filter(function(id){return id!==selectedId;});
+    selectedId=null; renderAll(); persist();
+  });
+
+  // ---------- toolbar ----------
+  var mMove=document.getElementById('mode-move'), mMeas=document.getElementById('mode-measure');
+  function setMode(m){
+    mode=m;
+    mMove.className='mode-btn'+(m==='move'?' active':'');
+    mMeas.className='mode-btn'+(m==='measure'?' active':'');
+    if(m==='move'){ measurePicks=[]; renderTokens(); renderMeasure(); }
+  }
+  mMove.addEventListener('click', function(){setMode('move');});
+  mMeas.addEventListener('click', function(){setMode('measure');});
+
+  document.getElementById('btn-add').addEventListener('click', function(){
+    if(!canEdit()){ say('Only the DM can change the live map.'); return; }
+    var t={id:nextId++, code:'N'+(tokens.length), name:'New combatant', side:'neutral',
+           col:Math.floor(COLS/2), row:Math.floor(ROWS/2), elev:0, hidden:false, note:''};
+    tokens.push(t); selectToken(t.id); persist();
+  });
+  document.getElementById('btn-reset').addEventListener('click', function(){
+    if(!canEdit()){ say('Only the DM can change the live map.'); return; }
+    tokens=ambushScene(); selectedId=null; measurePicks=[]; renderAll(); persist();
+    say('Scene reset to the forest ambush.');
+  });
+
+  // ---------- share / persistence ----------
+  var io=document.getElementById('io');
+  document.getElementById('btn-export').addEventListener('click', function(){
+    io.value=JSON.stringify({v:1, tokens:tokens});
+    io.select();
+    tryCopy(io.value, 'Scene exported \u2014 copy the block into Discord.');
+  });
+  document.getElementById('btn-import').addEventListener('click', function(){
+    if(!canEdit()){ say('Only the DM can change the live map.'); return; }
+    try{
+      var data=JSON.parse(io.value);
+      if(!data || !Array.isArray(data.tokens)) throw new Error('bad');
+      tokens=data.tokens.map(function(t,i){
+        return {id:t.id||i+1, code:String(t.code||'?').slice(0,4), name:t.name||'Unnamed',
+                side:(['party','enemy','neutral'].indexOf(t.side)>-1?t.side:'neutral'),
+                col:Math.min(COLS-1,Math.max(0,t.col|0)), row:Math.min(ROWS-1,Math.max(0,t.row|0)),
+                elev:Math.max(0,t.elev|0), hidden:!!t.hidden, note:String(t.note||'')};
+      });
+      nextId=tokens.reduce(function(m,t){return Math.max(m,t.id);},0)+1;
+      selectedId=null; measurePicks=[]; renderAll(); persist();
+      say('Scene loaded.');
+    }catch(e){ say('Could not read that scene block \u2014 paste the full exported text.'); }
+  });
+  document.getElementById('btn-copy-text').addEventListener('click', function(){
+    var lines=['**Battlefield positions** (5-ft squares, columns A\u2013P / rows 1\u201312; road runs along A\u2013B)'];
+    tokens.forEach(function(t){
+      var bits=[t.code+' \u2014 '+t.name+' \u2014 '+sq(t)];
+      if(t.elev>0) bits.push(t.elev+' ft up');
+      if(t.hidden) bits.push('hidden');
+      if(t.note) bits.push(t.note);
+      lines.push('\u2022 '+bits.join(' \u00b7 '));
+    });
+    tryCopy(lines.join('\n'), 'Positions copied \u2014 paste into Discord.');
+  });
+  function tryCopy(text, okMsg){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){say(okMsg);},
+        function(){ io.value=text; io.select(); say('Select-all and copy the box above.'); });
+    } else { io.value=text; io.select(); say('Select-all and copy the box above.'); }
+  }
+
+  // ---------- live sync (Firebase) ----------
+  var liveStatus=document.getElementById('live-status');
+  var dmLogin=document.getElementById('dm-login');
+  var dmSignedIn=document.getElementById('dm-signedin');
+  var authFlash=document.getElementById('auth-flash');
+  var editorCard=document.getElementById('editor');
+
+  function updatePermissionUI(){
+    var lock=liveMode && !isDM;
+    ['btn-add','btn-reset','btn-import','btn-del','btn-done'].forEach(function(id){
+      var b=document.getElementById(id); if(b) b.disabled=lock;
+    });
+    [fCode,fName,fSide,fElev,fNote,fHidden].forEach(function(f){ f.disabled=lock; });
+    document.querySelectorAll('.token').forEach(function(el){
+      el.style.cursor = lock ? 'pointer' : '';
+    });
+  }
+
+  if(liveMode && window.firebase){
+    try{
+      firebase.initializeApp(FIREBASE_CONFIG);
+      db=firebase.database();
+      sceneRef=db.ref(SCENE_PATH);
+      liveStatus.innerHTML='Connecting to the live map&hellip;';
+      dmLogin.style.display='block';
+
+      // everyone (including the DM) renders whatever is in the database
+      sceneRef.on('value', function(snap){
+        var data=snap.val();
+        if(data && Array.isArray(data.tokens)){
+          applyingRemote=true;
+          tokens=data.tokens;
+          nextId=tokens.reduce(function(m,t){return Math.max(m,t.id||0);},0)+1;
+          if(selectedId!==null && !byId(selectedId)) selectedId=null;
+          measurePicks=measurePicks.filter(function(id){return !!byId(id);});
+          renderAll();
+          applyingRemote=false;
+        } else if(isDM){
+          // first run: seed the database with the ambush scene
+          sceneRef.set({v:1, tokens:tokens});
+        }
+        if(!isDM) liveStatus.innerHTML='<b>Live.</b> You are viewing the DM\u2019s map \u2014 it updates by itself. You can tap tokens and measure, but only the DM can move things.';
+      }, function(){
+        liveStatus.innerHTML='Could not reach the database. Check the Firebase config and rules.';
+      });
+
+      firebase.auth().onAuthStateChanged(function(user){
+        isDM=!!user;
+        dmLogin.style.display=isDM?'none':'block';
+        dmSignedIn.style.display=isDM?'block':'none';
+        if(isDM){
+          document.getElementById('dm-who').textContent=user.email||'DM';
+          liveStatus.innerHTML='<b>Live.</b> You are the DM \u2014 every change you make appears on the players\u2019 screens.';
+        }
+        updatePermissionUI();
+      });
+
+      document.getElementById('btn-signin').addEventListener('click', function(){
+        var em=document.getElementById('dm-email').value.trim();
+        var pw=document.getElementById('dm-pass').value;
+        authFlash.textContent='';
+        firebase.auth().signInWithEmailAndPassword(em,pw).catch(function(err){
+          authFlash.textContent='Sign-in failed: '+(err && err.code ? err.code.replace('auth/','').replace(/-/g,' ') : 'unknown error');
+        });
+      });
+      document.getElementById('btn-signout').addEventListener('click', function(){
+        firebase.auth().signOut();
+      });
+    }catch(e){
+      liveMode=false;
+      liveStatus.textContent='Firebase config looks incomplete \u2014 running in local mode.';
+    }
+  } else if(liveMode){
+    liveStatus.textContent='Firebase scripts did not load \u2014 running in local mode.';
+    liveMode=false;
+  }
+
+  renderAll();
+  updatePermissionUI();
+})();
+</script>
+</body>
+</html>
