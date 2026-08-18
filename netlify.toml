@@ -4,7 +4,32 @@
   command = ""
 
 # Serve the map at the bare domain without renaming the file
+[build]
+  base = "."
+  publish = "."
+  command = ""
+
 [[redirects]]
   from = "/"
-  to = "/battle-map-live.html"
+  to = "/moxie"
+  status = 301
+
+[[redirects]]
+  from = "/moxie"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/nyx"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/ec"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/ithil"
+  to = "/index.html"
   status = 200
