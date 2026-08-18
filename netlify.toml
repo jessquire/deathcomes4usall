@@ -4,11 +4,6 @@
   command = ""
 
 # Serve the map at the bare domain without renaming the file
-[build]
-  base = "."
-  publish = "."
-  command = ""
-
 [[redirects]]
   from = "/"
   to = "/moxie"
