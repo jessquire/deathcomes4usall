@@ -267,14 +267,14 @@
   appId: "1:435212443510:web:03fc376f2dc20c41c2e457"
 }; 
 
- var SCENE_PATH = 'scenes/main';
-
-  var liveMode = !!(FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey);
-  var isDM = false;            // true after the DM signs in
-  var db = null, sceneRef = null, applyingRemote = false;
-
-  var COLS=16, ROWS=12, CELL=40;
-  var COL_NAMES='ABCDEFGHIJKLMNOP'.split('');
+var sceneName = (location.pathname.split('/').filter(Boolean)[0] || 'main')
+  .toLowerCase().replace(/\.html$/, '').replace(/[^a-z0-9_-]/g, '') || 'main';
+if (sceneName === 'index') sceneName = 'main';
+var SCENE_PATH = 'scenes/' + sceneName;
+var mapTitle = sceneName.charAt(0).toUpperCase() + sceneName.slice(1);
+document.title = 'Ranger\u2019s Survey \u2014 ' + mapTitle;
+var headerH1 = document.querySelector('header h1');
+if (headerH1) headerH1.textContent = 'Ranger\u2019s Survey \u2014 ' + mapTitle;;
 
   // ---- The ambush scene, built from the DM's description ----
   // Road runs top-to-bottom along columns A–B. "Off the road" = eastward.
