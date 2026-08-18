@@ -1,1 +1,1 @@
-this is the readme
+index.html is the battle map; all four /scene URLs serve it
