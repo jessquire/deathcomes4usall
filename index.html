@@ -276,6 +276,13 @@ document.title = 'Ranger\u2019s Survey \u2014 ' + mapTitle;
 var headerH1 = document.querySelector('header h1');
 if (headerH1) headerH1.textContent = 'Ranger\u2019s Survey \u2014 ' + mapTitle;;
 
+  var liveMode = !!(FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey);
+  var isDM = false;
+  var db = null, sceneRef = null, applyingRemote = false;
+
+  var COLS=16, ROWS=12, CELL=40;
+  var COL_NAMES='ABCDEFGHIJKLMNOP'.split('');
+
   // ---- The ambush scene, built from the DM's description ----
   // Road runs top-to-bottom along columns A–B. "Off the road" = eastward.
   function ambushScene(){ return [
