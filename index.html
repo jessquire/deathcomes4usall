@@ -141,7 +141,7 @@
       <button class="mode-btn active" id="mode-move">Move tokens</button>
       <button class="mode-btn" id="mode-measure">Measure</button>
       <button class="util-btn" id="btn-add">+ Add token</button>
-      <button class="util-btn" id="btn-reset">Reset to ambush scene</button>
+      <button class="util-btn" id="btn-reset">Clear the map</button>
       <span id="readout"></span>
     </div>
     <div class="map-scroll">
@@ -236,7 +236,7 @@
       <details>
         <summary>How to use this map</summary>
         <div class="help">
-          <li><b>Move tokens:</b> drag any circle. It snaps to 5-ft squares.</li>
+          <li><b>Move tokens:</b> drag any circle. It snaps to 5-ft squares. Each page (/moxie, /nyx\u2026) is its own map with its own saved scene.</li>
           <li><b>Measure:</b> tap the Measure mode, then tap two tokens. You get the grid distance (D&amp;D squares) and, if one of them is elevated, the true line distance for ranged attacks.</li>
           <li><b>Squares are named</b> like a chessboard (E7), so you can post moves in Discord: &ldquo;Kira drops from the tree and moves to D6.&rdquo;</li>
           <li><b>Copy positions as text</b> posts a readable summary of everyone&rsquo;s location for players taking turns later.</li>
@@ -300,7 +300,7 @@ if (headerH1) headerH1.textContent = 'Ranger\u2019s Survey \u2014 ' + mapTitle;;
     {id:12,code:'G1',  name:'Goliath — no armor, no weapons', side:'enemy', col:7, row:5, elev:0, hidden:false, note:'Beside & slightly ahead of E3. Out of reach'}
   ];}
 
-  var tokens = ambushScene();
+  var tokens = [];
   var nextId = 100;
   var mode = 'move';               // 'move' | 'measure'
   var selectedId = null;           // token being edited
@@ -602,8 +602,9 @@ if (headerH1) headerH1.textContent = 'Ranger\u2019s Survey \u2014 ' + mapTitle;;
   });
   document.getElementById('btn-reset').addEventListener('click', function(){
     if(!canEdit()){ say('Only the DM can change the live map.'); return; }
-    tokens=ambushScene(); selectedId=null; measurePicks=[]; renderAll(); persist();
-    say('Scene reset to the forest ambush.');
+    if(!confirm('Clear every token from this map? This cannot be undone.')) return;
+    tokens=[]; selectedId=null; measurePicks=[]; renderAll(); persist();
+    say('Map cleared \u2014 a blank canvas.');
   });
 
   // ---------- share / persistence ----------
@@ -676,9 +677,9 @@ if (headerH1) headerH1.textContent = 'Ranger\u2019s Survey \u2014 ' + mapTitle;;
       // everyone (including the DM) renders whatever is in the database
       sceneRef.on('value', function(snap){
         var data=snap.val();
-        if(data && Array.isArray(data.tokens)){
+        if(data){
           applyingRemote=true;
-          tokens=data.tokens;
+          tokens=Array.isArray(data.tokens)?data.tokens:[];
           nextId=tokens.reduce(function(m,t){return Math.max(m,t.id||0);},0)+1;
           if(selectedId!==null && !byId(selectedId)) selectedId=null;
           measurePicks=measurePicks.filter(function(id){return !!byId(id);});
