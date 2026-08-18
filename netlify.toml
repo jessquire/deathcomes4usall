@@ -1,0 +1,10 @@
+[build]
+  base = "."
+  publish = "."
+  command = ""
+
+# Serve the map at the bare domain without renaming the file
+[[redirects]]
+  from = "/"
+  to = "/battle-map-live.html"
+  status = 200
